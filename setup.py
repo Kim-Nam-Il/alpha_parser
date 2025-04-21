@@ -10,16 +10,15 @@ setup(
     install_requires=["numpy>=1.19.0", "pandas>=1.2.0"],
     python_requires=">=3.6",
 
-    # --- 새로 추가/수정 ----
-    license="MIT",                  # ① License 식별자
-    license_files=("LICENSE",),     # ② 실제 파일 경로(복수형 **license_files**!)
+    license="MIT",                  
+    license_files=("LICENSE",),     
 
     author="Kim Namil",
     author_email="batons-sofas-95@icloud.com",
     description="A parser for alpha formulas in quantitative trading and cryptocurrency back‑testing",
     long_description=(this_dir / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
-    url="https://github.com/kim-nam-il/CryptoBacktest",
+    url="https://github.com/kim-nam-il/alpha_parser",
 
     classifiers=[
         "Development Status :: 3 - Alpha",
