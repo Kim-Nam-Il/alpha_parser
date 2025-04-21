@@ -78,11 +78,170 @@ print(result)
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+2. Create your feature branch (`git checkout -b feature/add-new-alpha-function` or `git checkout -b fix/correlation-calculation`)
+3. Commit your changes (`git commit -m 'Add new alpha function for momentum calculation'`)
+4. Push to the branch (`git push origin feature/add-new-alpha-function`)
 5. Open a Pull Request
 
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Usage Example
+
+Here's a sample code to test alpha formulas:
+
+```python
+from alpha_parser.alpha_lexer import AlphaLexer
+from alpha_parser.alpha_parser import Parser
+import pandas as pd
+import numpy as np
+
+# Generate sample data
+def generate_sample_data(size=100):
+    np.random.seed(42)
+    dates = pd.date_range(start='2023-01-01', periods=size, freq='D')
+    
+    data = {
+        'date': dates,
+        'open': np.random.randn(size) * 10 + 100,
+        'high': np.random.randn(size) * 10 + 102,
+        'low': np.random.randn(size) * 10 + 98,
+        'close': np.random.randn(size) * 10 + 101,
+        'volume': np.abs(np.random.randn(size) * 1000000 + 5000000),
+        'returns': np.random.randn(size) * 0.02,
+        'vwap': np.random.randn(size) * 10 + 100.5,
+        'adv20': np.abs(np.random.randn(size) * 800000 + 4000000),
+        'cap': np.abs(np.random.randn(size) * 1000000000 + 5000000000),
+        'industry': np.random.choice(['tech', 'finance', 'health', 'energy'], size=size),
+        'sector': np.random.choice(['A', 'B', 'C', 'D'], size=size)
+    }
+    return pd.DataFrame(data)
+
+# Parse and evaluate alpha formula
+def parse_and_evaluate(expression, variables):
+    print(f"\n{'='*50}")
+    print(f"Input expression: {expression}")
+    if variables is not None:
+        print(f"Data shape: {variables.shape}")
+    try:
+        parser = Parser(AlphaLexer(expression))
+        ast = parser.parse()
+        print(f"AST structure: {ast}")
+        
+        # Calculate for each date
+        results = []
+        positions = []
+        for i in range(len(variables)):
+            # Use data up to current date
+            current_data = {col: variables[col].iloc[:i+1].tolist() for col in variables.columns if col != 'date'}
+            result = ast.evaluate(current_data)
+            results.append(result[-1] if isinstance(result, list) else result)
+            
+            # Determine position (long if positive, short if negative)
+            position = 1 if result[-1] > 0 else -1 if result[-1] < 0 else 0
+            positions.append(position)
+        
+        # Convert results to DataFrame
+        result_df = pd.DataFrame({
+            'date': variables['date'],
+            'alpha_value': results,
+            'position': positions,
+            'close': variables['close']
+        })
+        
+        # Calculate PnL
+        result_df['returns'] = result_df['close'].pct_change()
+        result_df['pnl'] = result_df['position'].shift(1) * result_df['returns']
+        result_df['cumulative_pnl'] = result_df['pnl'].cumsum()
+        
+        print("\nResults:")
+        print(result_df[['date', 'alpha_value', 'position', 'close', 'pnl', 'cumulative_pnl']].tail())
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return False
+    finally:
+        print(f"{'='*50}")
+
+# Test alpha formula
+def test_alpha(formula, data):
+    print(f"\nTesting formula: {formula}")
+    try:
+        result = parse_and_evaluate(formula, data)
+        return True
+    except Exception as e:
+        print(f"Error occurred: {str(e)}")
+        return False
+
+# Sample alpha formulas to test
+alpha_formulas = {
+    'Alpha#1': "(rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20): close), 2.), 5)) - 0.5)",
+    'Alpha#2': "(-1 * correlation(rank(delta(log(volume), 2)), rank(((close - open) / open)), 6))",
+    'Alpha#101': "((close - open) / ((high - low) + .001))"
+}
+
+# Prepare data
+data = generate_sample_data()
+
+# Test each alpha formula
+for name, formula in alpha_formulas.items():
+    print(f"\n{'='*50}")
+    print(f"Testing: {name}")
+    test_alpha(formula, data)
+
+## Alpha Formula Examples and Test Results
+
+### Alpha#1
+Formula: `(rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20): close), 2.), 5)) - 0.5)`
+
+Description:
+- Uses 20-day standard deviation when returns are negative, otherwise uses close price
+- Squares the value and finds the maximum over 5 days
+- Ranks the result and subtracts 0.5 to center around zero
+
+Test Results:
+```
+Results:
+         date  alpha_value  position       close       pnl  cumulative_pnl
+95 2023-04-06     0.047368         1   96.308243 -0.146161        0.544046
+96 2023-04-07    -0.104167        -1   83.868655 -0.129164        0.414882
+97 2023-04-08    -0.304124        -1  114.538724 -0.365692        0.049190
+98 2023-04-09    -0.295918        -1   99.854602  0.128202        0.177392
+99 2023-04-10     0.500000         1  113.378163 -0.135433        0.041960
+```
+
+### Alpha#2
+Formula: `(-1 * correlation(rank(delta(log(volume), 2)), rank(((close - open) / open)), 6))`
+
+Description:
+- Calculates correlation between:
+  - Rank of 2-day log volume difference
+  - Rank of (close-open)/open
+- Uses a 6-day correlation window
+- Multiplies by -1 to invert the signal
+
+Test Results:
+```
+Error: List length must be greater than 2 for delta
+```
+Note: This error occurs because the delta function requires at least 3 data points to calculate a 2-day difference.
+
+### Alpha#101
+Formula: `((close - open) / ((high - low) + .001))`
+
+Description:
+- Simple price-based formula
+- Divides (close-open) by (high-low)
+- Adds 0.001 to denominator to prevent division by zero
+
+Test Results:
+```
+Results:
+         date  alpha_value  position       close       pnl  cumulative_pnl
+95 2023-04-06     0.740255         1   96.308243 -0.146161       -1.416476
+96 2023-04-07     1.380160         1   83.868655 -0.129164       -1.545640
+97 2023-04-08     4.838512         1  114.538724  0.365692       -1.179949
+98 2023-04-09     0.055431         1   99.854602 -0.128202       -1.308151
+99 2023-04-10    -1.145650        -1  113.378163  0.135433       -1.172718
+```

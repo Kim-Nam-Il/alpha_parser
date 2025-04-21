@@ -2,6 +2,7 @@ from typing import List, Optional, Union, Dict, Any
 from alpha_parser.tokens import Token, TokenType
 from alpha_parser.alpha_lexer import AlphaLexer
 import math
+import pandas as pd
 
 class IndClass:
     def __init__(self, level: str):
@@ -39,6 +40,8 @@ class ASTNode:
         elif self.type == 'VARIABLE':
             # Convert to list if it's time series data
             value = variables.get(self.value, 0)
+            if isinstance(value, pd.Series):
+                return value.tolist()
             return [value] if not isinstance(value, list) else value
         elif self.type == 'LIST':
             return [node.evaluate(variables) for node in self.children]
@@ -236,11 +239,22 @@ class ASTNode:
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    raise ValueError(f"List length must be at least {n} for stddev")
-                x = x[-n:]
-                mean = sum(x) / n
-                variance = sum((xi - mean) ** 2 for xi in x) / n
-                return (variance ** 0.5)
+                    return [0] * len(x)  # 데이터가 부족한 경우 0으로 채움
+                
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        
+                    mean = sum(window_data) / len(window_data)
+                    variance = sum((xi - mean) ** 2 for xi in window_data) / len(window_data)
+                    result.append(variance ** 0.5)
+                    
+                return result
             elif func_name == 'indneutralize':
                 x, g = args
                 if len(x) != len(g):
@@ -287,8 +301,21 @@ class ASTNode:
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    return x.index(max(x))
-                return x[-n:].index(max(x[-n:]))
+                    return [0] * len(x)  # 데이터가 부족한 경우 0으로 채움
+                
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        
+                    max_idx = window_data.index(max(window_data))
+                    result.append(max_idx)
+                    
+                return result
                 
             elif func_name == 'ts_argmin':
                 x, n = args
@@ -682,11 +709,22 @@ class AlphaParser:
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    raise ValueError(f"List length must be at least {n} for stddev")
-                x = x[-n:]
-                mean = sum(x) / n
-                variance = sum((xi - mean) ** 2 for xi in x) / n
-                return (variance ** 0.5)
+                    return [0] * len(x)  # 데이터가 부족한 경우 0으로 채움
+                
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        
+                    mean = sum(window_data) / len(window_data)
+                    variance = sum((xi - mean) ** 2 for xi in window_data) / len(window_data)
+                    result.append(variance ** 0.5)
+                    
+                return result
             elif func_name == 'indneutralize':
                 x, g = args
                 if len(x) != len(g):
@@ -733,8 +771,21 @@ class AlphaParser:
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    return x.index(max(x))
-                return x[-n:].index(max(x[-n:]))
+                    return [0] * len(x)  # 데이터가 부족한 경우 0으로 채움
+                
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        
+                    max_idx = window_data.index(max(window_data))
+                    result.append(max_idx)
+                    
+                return result
             
             elif func_name == 'ts_argmin':
                 x, n = args
@@ -813,26 +864,6 @@ class AlphaParser:
             start = max(0, i - window + 1)
             result.append(max(data[start:i + 1]))
         return result
-
-    def ts_argmax(self, data: List[float], window: int) -> int:
-        """
-        시계열 데이터의 이동 최대값의 인덱스를 계산한다.
-        현재 값을 포함한 최근 window일 중 최대값의 인덱스를 계산
-        예: ts_argmax([1, 2, 3], 2) -> 2
-        """
-        if not isinstance(data, list):
-            data = [data]
-        if not isinstance(window, (int, float)):
-            raise ValueError("Window must be a number")
-        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
-        if window <= 0:
-            raise ValueError("Window must be positive")
-        result = []
-        for i in range(len(data)):
-            start = max(0, i - window + 1)
-            window_data = data[start:i + 1]
-            result.append(start + window_data.index(max(window_data)))
-        return result[-1]
 
     def ts_argmin(self, data: List[float], window: int) -> int:
         """
