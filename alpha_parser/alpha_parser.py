@@ -3,6 +3,23 @@ from alpha_parser.tokens import Token, TokenType
 from alpha_parser.alpha_lexer import AlphaLexer
 import math
 
+class IndClass:
+    def __init__(self, level: str):
+        self.level = level.lower()
+        if self.level not in ['sector', 'industry', 'subindustry']:
+            raise ValueError("IndClass level must be one of: sector, industry, subindustry")
+
+    def __eq__(self, other):
+        if isinstance(other, IndClass):
+            return self.level == other.level
+        return False
+
+    def __hash__(self):
+        return hash(self.level)
+
+    def __repr__(self):
+        return f"IndClass.{self.level}"
+
 class ASTNode:
     def __init__(self, type: str, value: Any = None, children: List['ASTNode'] = None):
         self.type = type
@@ -25,6 +42,25 @@ class ASTNode:
             return [value] if not isinstance(value, list) else value
         elif self.type == 'LIST':
             return [node.evaluate(variables) for node in self.children]
+        elif self.type == 'CONDITIONAL':
+            condition = self.children[0].evaluate(variables)
+            true_expr = self.children[1]
+            false_expr = self.children[2]
+            
+            # Handle time series data
+            if isinstance(condition, list):
+                true_val = true_expr.evaluate(variables)
+                false_val = false_expr.evaluate(variables)
+                
+                # Convert scalar values to lists if needed
+                if not isinstance(true_val, list):
+                    true_val = [true_val] * len(condition)
+                if not isinstance(false_val, list):
+                    false_val = [false_val] * len(condition)
+                    
+                return [t if c else f for c, t, f in zip(condition, true_val, false_val)]
+            else:
+                return true_expr.evaluate(variables) if condition else false_expr.evaluate(variables)
         elif self.type == 'BINARY_OP':
             left = self.children[0].evaluate(variables)
             right = self.children[1].evaluate(variables)
@@ -125,19 +161,35 @@ class ASTNode:
                 return [None] * n + x[:-n]
             elif func_name == 'correlation':
                 x, y, n = args
-                if len(x) != len(y):
-                    raise ValueError("Lists must have the same length for correlation")
                 n = int(n[0])
                 if len(x) < n or len(y) < n:
-                    return 0
-                x = x[-n:]
-                y = y[-n:]
-                x_mean = sum(x) / n
-                y_mean = sum(y) / n
-                cov = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y)) / n
-                x_std = (sum((xi - x_mean) ** 2 for xi in x) / n) ** 0.5
-                y_std = (sum((yi - y_mean) ** 2 for yi in y) / n) ** 0.5
-                return cov / (x_std * y_std) if x_std * y_std != 0 else 0
+                    return [0] * len(x)  # 초기값은 0으로 설정
+                
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        result.append(0)  # n일 이전의 값들은 0으로 설정
+                    else:
+                        # 최근 n일 데이터 추출
+                        x_window = x[i-n+1:i+1]
+                        y_window = y[i-n+1:i+1]
+                        
+                        # 평균 계산
+                        x_mean = sum(x_window) / n
+                        y_mean = sum(y_window) / n
+                        
+                        # 공분산과 표준편차 계산
+                        cov = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x_window, y_window)) / n
+                        x_std = (sum((xi - x_mean) ** 2 for xi in x_window) / n) ** 0.5
+                        y_std = (sum((yi - y_mean) ** 2 for yi in y_window) / n) ** 0.5
+                        
+                        # 상관계수 계산
+                        if x_std * y_std != 0:
+                            result.append(cov / (x_std * y_std))
+                        else:
+                            result.append(0)
+                
+                return result
             elif func_name == 'covariance':
                 x, y, n = args
                 if len(x) != len(y):
@@ -162,7 +214,12 @@ class ASTNode:
                 n = int(n[0])
                 if len(x) <= n:
                     raise ValueError(f"List length must be greater than {n} for delta")
-                return x[-1] - x[-n-1]
+                return [x[i] - x[i-n] for i in range(n, len(x))]
+            elif func_name == 'log':
+                x = args[0]
+                if any(val <= 0 for val in x):
+                    raise ValueError("Cannot take log of non-positive values")
+                return [math.log(val) for val in x]
             elif func_name == 'signedpower':
                 x, power = args
                 power = float(power[0])
@@ -175,6 +232,15 @@ class ASTNode:
                 weights = [i+1 for i in range(n)]
                 total_weight = sum(weights)
                 return sum(x[-n+i] * weights[i] for i in range(n)) / total_weight
+            elif func_name == 'stddev':
+                x, n = args
+                n = int(n[0])
+                if len(x) < n:
+                    raise ValueError(f"List length must be at least {n} for stddev")
+                x = x[-n:]
+                mean = sum(x) / n
+                variance = sum((xi - mean) ** 2 for xi in x) / n
+                return (variance ** 0.5)
             elif func_name == 'indneutralize':
                 x, g = args
                 if len(x) != len(g):
@@ -248,21 +314,41 @@ class ASTNode:
                     ranks[idx] = i / (len(x) - 1) if len(x) > 1 else 0
                 
                 return ranks[-1]
+            elif func_name == 'sum':
+                x = args[0]
+                if len(args) == 1:
+                    # 단일 리스트의 합
+                    return sum(x)
+                elif len(args) == 2:
+                    # 특정 기간 동안의 합
+                    n = int(args[1][0])
+                    if len(x) < n:
+                        return sum(x)
+                    return sum(x[-n:])
+                else:
+                    raise ValueError("sum function takes 1 or 2 arguments")
             else:
                 raise ValueError(f"Unknown function: {func_name}")
         else:
             raise ValueError(f"Unknown node type: {self.type}")
 
     def ts_min(self, data: List[float], window: int) -> List[float]:
-        if not data or window <= 0:
-            return []
+        """
+        시계열 데이터의 이동 최소값을 계산한다.
+        현재 값을 포함한 최근 window일의 최소값을 계산
+        예: ts_min([1, 2, 3], 2) -> [1, 1, 1]
+        """
+        if not isinstance(data, list):
+            data = [data]
+        if not isinstance(window, (int, float)):
+            raise ValueError("Window must be a number")
+        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        if window <= 0:
+            raise ValueError("Window must be positive")
         result = []
         for i in range(len(data)):
-            if i < window - 1:
-                result.append(None)
-            else:
-                window_data = data[i - window + 1:i + 1]
-                result.append(min(window_data))
+            start = max(0, i - window + 1)
+            result.append(min(data[start:i + 1]))
         return result
 
 class Parser:
@@ -284,54 +370,46 @@ class Parser:
         
         if token.type == TokenType.NUMBER:
             self.eat(TokenType.NUMBER)
-            return ASTNode('NUMBER', float(token.value))
-            
+            return ASTNode('NUMBER', token.value)
         elif token.type == TokenType.IDENTIFIER:
+            name = token.value
             self.eat(TokenType.IDENTIFIER)
             if self.current_token.type == TokenType.LPAREN:
-                raise ValueError(f"Unknown function: {token.value}")
-            return ASTNode('VARIABLE', token.value)
-            
-        elif token.type == TokenType.FUNCTION:
-            return self.function_call()
-            
+                return self.function_call(name)
+            return ASTNode('VARIABLE', name)
         elif token.type == TokenType.LPAREN:
             self.eat(TokenType.LPAREN)
             node = self.expr()
             self.eat(TokenType.RPAREN)
             return node
-            
         elif token.type == TokenType.LBRACKET:
-            self.eat(TokenType.LBRACKET)
-            values = []
-            if self.current_token.type != TokenType.RBRACKET:
-                values.append(self.expr())
-                while self.current_token.type == TokenType.COMMA:
-                    self.eat(TokenType.COMMA)
-                    values.append(self.expr())
-            self.eat(TokenType.RBRACKET)
-            return ASTNode('LIST', None, values)
+            return self.list_expr()
+        else:
+            self.error(f"Unexpected token: {token.type}")
             
-        elif token.type in [TokenType.PLUS, TokenType.MINUS]:
-            self.eat(token.type)
-            return ASTNode('UNARY_OP', token.type, [self.factor()])
-            
-        self.error(f'Unexpected token: {token}')
+    def list_expr(self) -> ASTNode:
+        self.eat(TokenType.LBRACKET)
+        elements = []
         
-    def function_call(self) -> ASTNode:
-        token = self.current_token
-        self.eat(TokenType.FUNCTION)
+        if self.current_token.type != TokenType.RBRACKET:
+            elements.append(self.expr())
+            while self.current_token.type == TokenType.COMMA:
+                self.eat(TokenType.COMMA)
+                elements.append(self.expr())
+                
+        self.eat(TokenType.RBRACKET)
+        return ASTNode('LIST', children=elements)
+        
+    def function_call(self, name: str) -> ASTNode:
         self.eat(TokenType.LPAREN)
-        
         args = []
         if self.current_token.type != TokenType.RPAREN:
             args.append(self.expr())
             while self.current_token.type == TokenType.COMMA:
                 self.eat(TokenType.COMMA)
                 args.append(self.expr())
-                
         self.eat(TokenType.RPAREN)
-        return ASTNode('FUNCTION_CALL', token.value, args)
+        return ASTNode('FUNCTION_CALL', name, args)
         
     def factor(self) -> ASTNode:
         token = self.current_token
@@ -345,12 +423,10 @@ class Parser:
     def power(self) -> ASTNode:
         """멱승 연산을 처리하는 메서드"""
         node = self.factor()
-        
-        if self.current_token.type == TokenType.MULTIPLY and self.lexer.peek().type == TokenType.MULTIPLY:
-            self.eat(TokenType.MULTIPLY)
-            self.eat(TokenType.MULTIPLY)
+        # Handle POWER token from lexer
+        if self.current_token.type == TokenType.POWER:
+            self.eat(TokenType.POWER)
             node = ASTNode('BINARY_OP', TokenType.POWER, [node, self.factor()])
-            
         return node
         
     def term(self) -> ASTNode:
@@ -430,12 +506,13 @@ class Parser:
 
 class AlphaParser:
     def __init__(self):
-        self.lexer = AlphaLexer()
+        # Only initialize variables; lexer is created per parse call
         self.variables = {}
         
     def parse(self, formula: str) -> Any:
-        self.lexer.input(formula)
-        parser = Parser(self.lexer)
+        # Create a fresh lexer for each formula
+        lexer = AlphaLexer(formula)
+        parser = Parser(lexer)
         ast = parser.parse()
         return ast.evaluate(self.variables)
 
@@ -533,15 +610,33 @@ class AlphaParser:
                 x, y, n = args
                 n = int(n[0])
                 if len(x) < n or len(y) < n:
-                    return 0
-                x = x[-n:]
-                y = y[-n:]
-                x_mean = sum(x) / n
-                y_mean = sum(y) / n
-                cov = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y)) / n
-                x_std = (sum((xi - x_mean) ** 2 for xi in x) / n) ** 0.5
-                y_std = (sum((yi - y_mean) ** 2 for yi in y) / n) ** 0.5
-                return cov / (x_std * y_std) if x_std * y_std != 0 else 0
+                    return [0] * len(x)  # 초기값은 0으로 설정
+                
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        result.append(0)  # n일 이전의 값들은 0으로 설정
+                    else:
+                        # 최근 n일 데이터 추출
+                        x_window = x[i-n+1:i+1]
+                        y_window = y[i-n+1:i+1]
+                        
+                        # 평균 계산
+                        x_mean = sum(x_window) / n
+                        y_mean = sum(y_window) / n
+                        
+                        # 공분산과 표준편차 계산
+                        cov = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x_window, y_window)) / n
+                        x_std = (sum((xi - x_mean) ** 2 for xi in x_window) / n) ** 0.5
+                        y_std = (sum((yi - y_mean) ** 2 for yi in y_window) / n) ** 0.5
+                        
+                        # 상관계수 계산
+                        if x_std * y_std != 0:
+                            result.append(cov / (x_std * y_std))
+                        else:
+                            result.append(0)
+                
+                return result
             
             elif func_name == 'covariance':
                 x, y, n = args
@@ -564,23 +659,34 @@ class AlphaParser:
                 x, n = args
                 n = int(n[0])
                 if len(x) <= n:
-                    return 0
-                return x[-1] - x[-n-1]
-            
+                    raise ValueError(f"List length must be greater than {n} for delta")
+                return [x[i] - x[i-n] for i in range(n, len(x))]
+            elif func_name == 'log':
+                x = args[0]
+                if any(val <= 0 for val in x):
+                    raise ValueError("Cannot take log of non-positive values")
+                return [math.log(val) for val in x]
             elif func_name == 'signedpower':
                 x, power = args
                 power = float(power[0])
                 return [abs(xi) ** power * (1 if xi >= 0 else -1) for xi in x]
-            
             elif func_name == 'decay_linear':
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    return 0
+                    raise ValueError(f"List length must be at least {n} for decay_linear")
                 weights = [i+1 for i in range(n)]
                 total_weight = sum(weights)
                 return sum(x[-n+i] * weights[i] for i in range(n)) / total_weight
-            
+            elif func_name == 'stddev':
+                x, n = args
+                n = int(n[0])
+                if len(x) < n:
+                    raise ValueError(f"List length must be at least {n} for stddev")
+                x = x[-n:]
+                mean = sum(x) / n
+                variance = sum((xi - mean) ** 2 for xi in x) / n
+                return (variance ** 0.5)
             elif func_name == 'indneutralize':
                 x, g = args
                 if len(x) != len(g):
@@ -655,7 +761,148 @@ class AlphaParser:
                 
                 return ranks[-1]
             
+            elif func_name == 'sum':
+                x = args[0]
+                if len(args) == 1:
+                    # 단일 리스트의 합
+                    return sum(x)
+                elif len(args) == 2:
+                    # 특정 기간 동안의 합
+                    n = int(args[1][0])
+                    if len(x) < n:
+                        return sum(x)
+                    return sum(x[-n:])
+                else:
+                    raise ValueError("sum function takes 1 or 2 arguments")
+            
             else:
                 raise ValueError(f"Unknown function: {func_name}") 
         else:
             raise ValueError(f"Unknown node type: {node.type}") 
+
+    def delay(self, data: List[float], periods: int) -> List[float]:
+        """
+        시계열 데이터를 periods만큼 지연시킨다.
+        예: delay([1, 2, 3], 1) -> [None, 1, 2]
+        """
+        if not isinstance(data, list):
+            data = [data]
+        if not isinstance(periods, (int, float)):
+            raise ValueError("Periods must be a number")
+        periods = int(periods)
+        if periods < 0:
+            raise ValueError("Periods must be non-negative")
+        result = [None] * periods + data[:-periods] if periods > 0 else data
+        return result
+
+    def ts_max(self, data: List[float], window: int) -> List[float]:
+        """
+        시계열 데이터의 이동 최대값을 계산한다.
+        현재 값을 포함한 최근 window일의 최대값을 계산
+        예: ts_max([1, 2, 3], 2) -> [1, 2, 3]
+        """
+        if not isinstance(data, list):
+            data = [data]
+        if not isinstance(window, (int, float)):
+            raise ValueError("Window must be a number")
+        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        if window <= 0:
+            raise ValueError("Window must be positive")
+        result = []
+        for i in range(len(data)):
+            start = max(0, i - window + 1)
+            result.append(max(data[start:i + 1]))
+        return result
+
+    def ts_argmax(self, data: List[float], window: int) -> int:
+        """
+        시계열 데이터의 이동 최대값의 인덱스를 계산한다.
+        현재 값을 포함한 최근 window일 중 최대값의 인덱스를 계산
+        예: ts_argmax([1, 2, 3], 2) -> 2
+        """
+        if not isinstance(data, list):
+            data = [data]
+        if not isinstance(window, (int, float)):
+            raise ValueError("Window must be a number")
+        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        if window <= 0:
+            raise ValueError("Window must be positive")
+        result = []
+        for i in range(len(data)):
+            start = max(0, i - window + 1)
+            window_data = data[start:i + 1]
+            result.append(start + window_data.index(max(window_data)))
+        return result[-1]
+
+    def ts_argmin(self, data: List[float], window: int) -> int:
+        """
+        시계열 데이터의 이동 최소값의 인덱스를 계산한다.
+        현재 값을 포함한 최근 window일 중 최소값의 인덱스를 계산
+        예: ts_argmin([1, 2, 3], 2) -> 0
+        """
+        if not isinstance(data, list):
+            data = [data]
+        if not isinstance(window, (int, float)):
+            raise ValueError("Window must be a number")
+        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        if window <= 0:
+            raise ValueError("Window must be positive")
+        result = []
+        for i in range(len(data)):
+            start = max(0, i - window + 1)
+            window_data = data[start:i + 1]
+            result.append(start + window_data.index(min(window_data)))
+        return result[-1]
+
+    def ts_rank(self, data: List[float], window: int) -> List[float]:
+        """
+        시계열 데이터의 이동 순위를 계산한다.
+        현재 값을 포함한 최근 window일의 순위를 계산
+        예: ts_rank([1, 2, 3], 2) -> [1, 2, 2]
+        """
+        if not isinstance(data, list):
+            data = [data]
+        if not isinstance(window, (int, float)):
+            raise ValueError("Window must be a number")
+        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        if window <= 0:
+            raise ValueError("Window must be positive")
+        result = []
+        for i in range(len(data)):
+            start = max(0, i - window + 1)
+            window_data = data[start:i + 1]
+            sorted_data = sorted(window_data)
+            rank = sorted_data.index(data[i]) + 1
+            result.append(rank)
+        return result 
+
+    def stddev(self, data: List[float], window: int) -> List[float]:
+        """
+        시계열 데이터의 이동 표준편차를 계산한다.
+        현재 값을 포함한 최근 window일의 표준편차를 계산
+        예: stddev([1, 2, 3], 2) -> [0, 0.707, 0.707]
+        """
+        if not isinstance(data, list):
+            data = [data]
+        if not isinstance(window, (int, float)):
+            raise ValueError("Window must be a number")
+        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        if window <= 0:
+            raise ValueError("Window must be positive")
+        
+        result = []
+        for i in range(len(data)):
+            start = max(0, i - window + 1)
+            window_data = data[start:i + 1]
+            
+            # 평균 계산
+            mean = sum(window_data) / len(window_data)
+            
+            # 분산 계산
+            variance = sum((x - mean) ** 2 for x in window_data) / len(window_data)
+            
+            # 표준편차 계산
+            std = variance ** 0.5
+            result.append(std)
+            
+        return result 

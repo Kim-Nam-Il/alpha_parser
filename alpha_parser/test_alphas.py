@@ -1,19 +1,46 @@
-from alpha_lexer import AlphaLexer
-from alpha_parser import Parser
+from alpha_parser.alpha_lexer import AlphaLexer
+from alpha_parser.alpha_parser import Parser
 import pandas as pd
 import numpy as np
 
 def parse_and_evaluate(expression, variables=None):
     print(f"\n{'='*50}")
     print(f"Input expression: {expression}")
-    if variables:
-        print(f"Variable values: {variables}")
+    if variables is not None:
+        print(f"Data shape: {variables.shape}")
     try:
         parser = Parser(AlphaLexer(expression))
         ast = parser.parse()
         print(f"AST structure: {ast}")
-        result = ast.evaluate(variables)
-        print(f"Calculation result: {result}")
+        
+        # 각 날짜별로 계산
+        results = []
+        positions = []
+        for i in range(len(variables)):
+            # 현재까지의 데이터만 사용
+            current_data = {col: variables[col].iloc[:i+1].tolist() for col in variables.columns if col != 'date'}
+            result = ast.evaluate(current_data)
+            results.append(result[-1] if isinstance(result, list) else result)
+            
+            # 포지션 결정 (양수면 롱, 음수면 숏)
+            position = 1 if result[-1] > 0 else -1 if result[-1] < 0 else 0
+            positions.append(position)
+        
+        # 결과를 DataFrame으로 변환
+        result_df = pd.DataFrame({
+            'date': variables['date'],
+            'alpha_value': results,
+            'position': positions,
+            'close': variables['close']
+        })
+        
+        # PnL 계산
+        result_df['returns'] = result_df['close'].pct_change()
+        result_df['pnl'] = result_df['position'].shift(1) * result_df['returns']
+        result_df['cumulative_pnl'] = result_df['pnl'].cumsum()
+        
+        print("\nResults:")
+        print(result_df[['date', 'alpha_value', 'position', 'close', 'pnl', 'cumulative_pnl']].tail())
         return True
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -24,7 +51,11 @@ def parse_and_evaluate(expression, variables=None):
 # Sample data for testing
 def generate_sample_data(size=100):
     np.random.seed(42)
+    # 날짜 인덱스 생성
+    dates = pd.date_range(start='2023-01-01', periods=size, freq='D')
+    
     data = {
+        'date': dates,
         'open': np.random.randn(size) * 10 + 100,
         'high': np.random.randn(size) * 10 + 102,
         'low': np.random.randn(size) * 10 + 98,
@@ -37,7 +68,7 @@ def generate_sample_data(size=100):
         'industry': np.random.choice(['tech', 'finance', 'health', 'energy'], size=size),
         'sector': np.random.choice(['A', 'B', 'C', 'D'], size=size)
     }
-    return data
+    return pd.DataFrame(data)
 
 # Alpha formulas
 alpha_formulas = {
@@ -147,13 +178,11 @@ alpha_formulas = {
 def test_all_alphas():
     data = generate_sample_data()
     
-    # Convert data to lists for the parser
-    variables = {k: list(v) for k, v in data.items()}
-    
     results = {}
     for name, formula in alpha_formulas.items():
         print(f"\nTesting {name}")
-        success = parse_and_evaluate(formula, variables)
+        print(f"Formula: {formula}")
+        success = parse_and_evaluate(formula, data)
         results[name] = success
     
     # Print summary
@@ -162,12 +191,32 @@ def test_all_alphas():
     print(f"Successful: {sum(results.values())}")
     print(f"Failed: {len(results) - sum(results.values())}")
     
-    # Print failed alphas
+    # Print failed alphas with their formulas
     failed = [name for name, success in results.items() if not success]
     if failed:
         print("\nFailed Alphas:")
         for name in failed:
-            print(f"- {name}")
+            print(f"- {name}: {alpha_formulas[name]}")
+    
+    # Print successful alphas
+    successful = [name for name, success in results.items() if success]
+    if successful:
+        print("\nSuccessful Alphas:")
+        for name in successful:
+            print(f"- {name}: {alpha_formulas[name]}")
 
 if __name__ == '__main__':
-    test_all_alphas() 
+    import sys
+    if len(sys.argv) > 1:
+        # 특정 알파만 실행
+        alpha_name = sys.argv[1]
+        if alpha_name in alpha_formulas:
+            data = generate_sample_data()
+            print(f"\nTesting {alpha_name}")
+            print(f"Formula: {alpha_formulas[alpha_name]}")
+            parse_and_evaluate(alpha_formulas[alpha_name], data)
+        else:
+            print(f"Error: Alpha {alpha_name} not found")
+    else:
+        # 모든 알파 실행
+        test_all_alphas() 

@@ -1,44 +1,40 @@
-from enum import Enum, auto
+from enum import Enum
 from typing import Any
 
 class TokenType(Enum):
-    # Basic tokens
-    EOF = auto()
-    NUMBER = auto()
-    IDENTIFIER = auto()
-    FUNCTION = auto()
+    # 기본 토큰
+    EOF = 'EOF'
+    NUMBER = 'NUMBER'
+    IDENTIFIER = 'IDENTIFIER'
     
-    # Operators
-    PLUS = auto()
-    MINUS = auto()
-    MULTIPLY = auto()
-    DIVIDE = auto()
-    POWER = auto()
+    # 산술 연산자
+    PLUS = 'PLUS'
+    MINUS = 'MINUS'
+    MULTIPLY = 'MULTIPLY'
+    DIVIDE = 'DIVIDE'
+    POWER = 'POWER'
     
-    # Comparison operators
-    EQUAL = auto()
-    NOT_EQUAL = auto()
-    GREATER = auto()
-    LESS = auto()
-    GREATER_EQUAL = auto()
-    LESS_EQUAL = auto()
+    # 비교 연산자
+    EQUAL = 'EQUAL'
+    NOT_EQUAL = 'NOT_EQUAL'
+    GREATER = 'GREATER'
+    LESS = 'LESS'
+    GREATER_EQUAL = 'GREATER_EQUAL'
+    LESS_EQUAL = 'LESS_EQUAL'
     
-    # Logical operators
-    AND = auto()
-    OR = auto()
-    NOT = auto()
+    # 논리 연산자
+    AND = '&&'
+    OR = '||'
+    NOT = 'NOT'
     
-    # Punctuation
-    LPAREN = auto()
-    RPAREN = auto()
-    LBRACKET = auto()
-    RBRACKET = auto()
-    COMMA = auto()
-    QUESTION = auto()
-    COLON = auto()
-    
-    # Assignment
-    ASSIGN = auto()
+    # 기타
+    LPAREN = 'LPAREN'
+    RPAREN = 'RPAREN'
+    COMMA = 'COMMA'
+    QUESTION = 'QUESTION'
+    COLON = 'COLON'
+    LBRACKET = 'LBRACKET'
+    RBRACKET = 'RBRACKET'
 
 # 알파 공식에서 자주 사용되는 변수들
 KNOWN_VARIABLES = {
@@ -57,12 +53,14 @@ KNOWN_FUNCTIONS = {
 }
 
 class Token:
-    def __init__(self, type: TokenType, value: Any = None):
+    def __init__(self, type: TokenType, value: Any = None, line: int = 0, column: int = 0):
         self.type = type
         self.value = value
+        self.line = line
+        self.column = column
         
     def __repr__(self) -> str:
-        return f"Token({self.type}, {self.value})"
+        return f"Token({self.type}, {self.value}, line={self.line}, column={self.column})"
         
     def __eq__(self, other) -> bool:
         if not isinstance(other, Token):
