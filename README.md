@@ -15,6 +15,7 @@ pip install alpha_parser
 
 ## 🚀 Usage
 
+### Basic Usage
 ```python
 from alpha_parser.lexer import Lexer
 from alpha_parser.parser import Parser
@@ -31,6 +32,21 @@ result = parser.parse()
 
 print(result)
 ```
+
+Output:
+```
+ASTNode(BINARY_OP, value=TokenType.MINUS, children=[
+    ASTNode(FUNCTION_CALL, value=rank, children=[
+        ASTNode(VARIABLE, value=close, children=[])
+    ]), 
+    ASTNode(NUMBER, value=0.5, children=[])
+])
+```
+
+This output shows the Abstract Syntax Tree (AST) structure of the formula:
+- Root node is a binary operation (MINUS)
+- Left child is a function call to `rank` with `close` as its argument
+- Right child is a number (0.5)
 
 ## ✨ Features
 
