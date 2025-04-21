@@ -217,7 +217,7 @@ Description:
 - Ranks the result and subtracts 0.5 to center around zero
 
 Test Results:
-```
+
 Results:
          date  alpha_value  position       close       pnl  cumulative_pnl
 95 2023-04-06     0.047368         1   96.308243 -0.146161        0.544046
@@ -252,7 +252,7 @@ Description:
 - Adds 0.001 to denominator to prevent division by zero
 
 Test Results:
-```
+
 Results:
          date  alpha_value  position       close       pnl  cumulative_pnl
 95 2023-04-06     0.740255         1   96.308243 -0.146161       -1.416476
