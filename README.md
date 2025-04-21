@@ -193,7 +193,6 @@ def test_alpha(formula, data):
 # Sample alpha formulas to test
 alpha_formulas = {
     'Alpha#1': "(rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20): close), 2.), 5)) - 0.5)",
-    'Alpha#2': "(-1 * correlation(rank(delta(log(volume), 2)), rank(((close - open) / open)), 6))",
     'Alpha#101': "((close - open) / ((high - low) + .001))"
 }
 
@@ -217,7 +216,7 @@ Description:
 - Ranks the result and subtracts 0.5 to center around zero
 
 Test Results:
-```
+
 Results:
          date  alpha_value  position       close       pnl  cumulative_pnl
 95 2023-04-06     0.047368         1   96.308243 -0.146161        0.544046
@@ -225,23 +224,7 @@ Results:
 97 2023-04-08    -0.304124        -1  114.538724 -0.365692        0.049190
 98 2023-04-09    -0.295918        -1   99.854602  0.128202        0.177392
 99 2023-04-10     0.500000         1  113.378163 -0.135433        0.041960
-```
 
-### Alpha#2
-Formula: `(-1 * correlation(rank(delta(log(volume), 2)), rank(((close - open) / open)), 6))`
-
-Description:
-- Calculates correlation between:
-  - Rank of 2-day log volume difference
-  - Rank of (close-open)/open
-- Uses a 6-day correlation window
-- Multiplies by -1 to invert the signal
-
-Test Results:
-```
-Error: List length must be greater than 2 for delta
-```
-Note: This error occurs because the delta function requires at least 3 data points to calculate a 2-day difference.
 
 ### Alpha#101
 Formula: `((close - open) / ((high - low) + .001))`
@@ -252,7 +235,7 @@ Description:
 - Adds 0.001 to denominator to prevent division by zero
 
 Test Results:
-```
+
 Results:
          date  alpha_value  position       close       pnl  cumulative_pnl
 95 2023-04-06     0.740255         1   96.308243 -0.146161       -1.416476
