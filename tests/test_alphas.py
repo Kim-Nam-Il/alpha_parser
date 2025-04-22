@@ -1,3 +1,4 @@
+import sys
 from alpha_parser.alpha_lexer import AlphaLexer
 from alpha_parser.alpha_parser import Parser
 import pandas as pd
@@ -13,7 +14,10 @@ def parse_and_evaluate(expression, variables=None):
         ast = parser.parse()
         print(f"AST structure: {ast}")
         result = ast.evaluate(variables)
-        print(f"Calculation result: {result}")
+        if isinstance(result, list):
+            print(f"Calculation result (length: {len(result)}): {result}")
+        else:
+            print(f"Calculation result (scalar): {result}")
         return True
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -21,8 +25,7 @@ def parse_and_evaluate(expression, variables=None):
     finally:
         print(f"{'='*50}")
 
-# Sample data for testing
-def generate_sample_data(size=100):
+def generate_sample_data(size=250):
     np.random.seed(42)
     data = {
         'open': np.random.randn(size) * 10 + 100,
@@ -69,7 +72,7 @@ alpha_formulas = {
     'Alpha#26': "(-1 * ts_max(correlation(ts_rank(volume, 5), ts_rank(high, 5), 5), 3))",
     'Alpha#27': "((0.5 < rank((sum(correlation(rank(volume), rank(vwap), 6), 2) / 2.0))) ? (-1 * 1) : 1)",
     'Alpha#28': "scale(((correlation(adv20, low, 5) + ((high + low) / 2)) - close))",
-    'Alpha#29': "(min(product(rank(rank(scale(log(sum(ts_min(rank(rank((-1 * rank(delta((close - 1), 5))))), 2), 1))))), 1), 5) + ts_rank(delay((-1 * returns), 6), 5))",
+    'Alpha#29': "(min(product(rank(rank(scale(log(abs(sum(ts_min(rank(rank((-1 * rank(delta((close - 1), 5))))), 2))) + 1e-10)))), 1), 5) + ts_rank(delay((-1 * returns), 6), 5))",
     'Alpha#30': "(((1.0 - rank(((sign((close - delay(close, 1))) + sign((delay(close, 1) - delay(close, 2)))) + sign((delay(close, 2) - delay(close, 3)))))) * sum(volume, 5)) / sum(volume, 20))",
     'Alpha#31': "((rank(rank(rank(decay_linear((-1 * rank(rank(delta(close, 10)))), 10)))) + rank((-1 * delta(close, 3)))) + sign(scale(correlation(adv20, low, 12))))",
     'Alpha#32': "(scale(((sum(close, 7) / 7) - close)) + (20 * scale(correlation(vwap, delay(close, 5), 230))))",
@@ -144,30 +147,43 @@ alpha_formulas = {
     'Alpha#101': "((close - open) / ((high - low) + .001))"
 }
 
-def test_all_alphas():
+def test_alpha(alpha_num):
     data = generate_sample_data()
-    
-    # Convert data to lists for the parser
     variables = {k: list(v) for k, v in data.items()}
     
-    results = {}
-    for name, formula in alpha_formulas.items():
-        print(f"\nTesting {name}")
-        success = parse_and_evaluate(formula, variables)
-        results[name] = success
-    
-    # Print summary
-    print("\nTest Summary:")
-    print(f"Total alphas tested: {len(results)}")
-    print(f"Successful: {sum(results.values())}")
-    print(f"Failed: {len(results) - sum(results.values())}")
-    
-    # Print failed alphas
-    failed = [name for name, success in results.items() if not success]
-    if failed:
-        print("\nFailed Alphas:")
-        for name in failed:
-            print(f"- {name}")
+    alpha_name = f'Alpha#{alpha_num}'
+    if alpha_name not in alpha_formulas:
+        print(f"Error: {alpha_name} not found")
+        return
+        
+    formula = alpha_formulas[alpha_name]
+    print(f"\nTesting {alpha_name}")
+    success = parse_and_evaluate(formula, variables)
+    print(f"\nTest Result: {'Success' if success else 'Failed'}")
 
 if __name__ == '__main__':
-    test_all_alphas() 
+    if len(sys.argv) > 1:
+        # 특정 알파만 테스트
+        alpha_num = int(sys.argv[1])
+        test_alpha(alpha_num)
+    else:
+        # 모든 알파 테스트
+        data = generate_sample_data()
+        variables = {k: list(v) for k, v in data.items()}
+        
+        results = {}
+        for name, formula in alpha_formulas.items():
+            print(f"\nTesting {name}")
+            success = parse_and_evaluate(formula, variables)
+            results[name] = success
+        
+        print("\nTest Summary:")
+        print(f"Total alphas tested: {len(results)}")
+        print(f"Successful: {sum(results.values())}")
+        print(f"Failed: {len(results) - sum(results.values())}")
+        
+        failed = [name for name, success in results.items() if not success]
+        if failed:
+            print("\nFailed Alphas:")
+            for name in failed:
+                print(f"- {name}") 
