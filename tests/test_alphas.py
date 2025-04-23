@@ -25,7 +25,7 @@ def parse_and_evaluate(expression, variables=None):
     finally:
         print(f"{'='*50}")
 
-def generate_sample_data(size=250):
+def generate_sample_data(size=500):
     np.random.seed(42)
     data = {
         'open': np.random.randn(size) * 10 + 100,
@@ -38,13 +38,14 @@ def generate_sample_data(size=250):
         'adv20': np.abs(np.random.randn(size) * 800000 + 4000000),
         'cap': np.abs(np.random.randn(size) * 1000000000 + 5000000000),
         'industry': np.random.choice(['tech', 'finance', 'health', 'energy'], size=size),
-        'sector': np.random.choice(['A', 'B', 'C', 'D'], size=size)
+        'sector': np.random.choice(['A', 'B', 'C', 'D'], size=size),
+        'subindustry': np.random.choice(['X', 'Y', 'Z', 'W'], size=size)
     }
     return data
 
 # Alpha formulas
 alpha_formulas = {
-    'Alpha#1': "(rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20): close), 2.), 5)) - 0.5)",
+    'Alpha#1': "scale(close)", #"(rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20): close), 2.), 5)) - 0.5)",
     'Alpha#2': "(-1 * correlation(rank(delta(log(volume), 2)), rank(((close - open) / open)), 6))",
     'Alpha#3': "(-1 * correlation(rank(open), rank(volume), 10))",
     'Alpha#4': "(-1 * Ts_Rank(rank(low), 9))",
@@ -72,7 +73,7 @@ alpha_formulas = {
     'Alpha#26': "(-1 * ts_max(correlation(ts_rank(volume, 5), ts_rank(high, 5), 5), 3))",
     'Alpha#27': "((0.5 < rank((sum(correlation(rank(volume), rank(vwap), 6), 2) / 2.0))) ? (-1 * 1) : 1)",
     'Alpha#28': "scale(((correlation(adv20, low, 5) + ((high + low) / 2)) - close))",
-    'Alpha#29': "(min(product(rank(rank(scale(log(abs(sum(ts_min(rank(rank((-1 * rank(delta((close - 1), 5))))), 2))) + 1e-10)))), 1), 5) + ts_rank(delay((-1 * returns), 6), 5))",
+    'Alpha#29': "min(min(product(rank(rank(scale(log(abs(sum(ts_min(rank(rank((-1 * rank(delta((close - 1), 5))))), 2))) + 10))))), 1), 5) + ts_rank(delay((-1 * returns), 6), 5)",
     'Alpha#30': "(((1.0 - rank(((sign((close - delay(close, 1))) + sign((delay(close, 1) - delay(close, 2)))) + sign((delay(close, 2) - delay(close, 3)))))) * sum(volume, 5)) / sum(volume, 20))",
     'Alpha#31': "((rank(rank(rank(decay_linear((-1 * rank(rank(delta(close, 10)))), 10)))) + rank((-1 * delta(close, 3)))) + sign(scale(correlation(adv20, low, 12))))",
     'Alpha#32': "(scale(((sum(close, 7) / 7) - close)) + (20 * scale(correlation(vwap, delay(close, 5), 230))))",

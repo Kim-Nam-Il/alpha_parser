@@ -1,8 +1,10 @@
+# alpha_parser/alpha_parser.py
 from typing import List, Optional, Union, Dict, Any
 from alpha_parser.tokens import Token, TokenType
 from alpha_parser.alpha_lexer import AlphaLexer
 import math
 import pandas as pd
+import numpy as np
 
 class IndClass:
     def __init__(self, level: str):
@@ -30,118 +32,161 @@ class ASTNode:
     def __repr__(self) -> str:
         return f"ASTNode({self.type}, value={self.value}, children={self.children})"
         
-    def evaluate(self, variables: dict = None) -> Any:
+    def evaluate(self, variables: dict = None, depth: int = 0) -> Any:
         """Evaluate AST node and return the result"""
+        indent = "  " * depth
         if variables is None:
             variables = {}
             
         if self.type == 'NUMBER':
-            return float(self.value)
+            val = float(self.value)
+            print(f"{indent}[DEBUG] NUMBER => {val}")
+            return val
         elif self.type == 'VARIABLE':
-            # Convert to list if it's time series data
             value = variables.get(self.value, 0)
             if isinstance(value, pd.Series):
-                return value.tolist()
-            return [value] if not isinstance(value, list) else value
+                value = value.tolist()
+            if not isinstance(value, list):
+                value = [value]
+            print(f"{indent}[DEBUG] VARIABLE {self.value} => shape={len(value)}")
+            return value
+        elif self.type == 'INDCLASS':
+            # IndClass.xxx 패턴 처리
+            if self.value.startswith('IndClass.'):
+                level = self.value.split('.')[1]
+                print(f"{indent}[DEBUG] INDCLASS => {level}")
+                # variables에서 해당 레벨의 리스트를 가져옴
+                group_list = variables.get(level, [])
+                if not isinstance(group_list, list):
+                    group_list = [group_list]  # 단일 값이면 리스트로 변환
+                print(f"{indent}[DEBUG] INDCLASS {level} => shape={len(group_list)}")
+                return group_list
+            return self.value
         elif self.type == 'LIST':
-            return [node.evaluate(variables) for node in self.children]
+            result = [node.evaluate(variables, depth+1) for node in self.children]
+            print(f"{indent}[DEBUG] LIST => shape={len(result)}")
+            return result
         elif self.type == 'CONDITIONAL':
-            condition = self.children[0].evaluate(variables)
+            condition = self.children[0].evaluate(variables, depth+1)
             true_expr = self.children[1]
             false_expr = self.children[2]
             
-            # Handle time series data
             if isinstance(condition, list):
-                true_val = true_expr.evaluate(variables)
-                false_val = false_expr.evaluate(variables)
+                true_val = true_expr.evaluate(variables, depth+1)
+                false_val = false_expr.evaluate(variables, depth+1)
                 
-                # Convert scalar values to lists if needed
                 if not isinstance(true_val, list):
                     true_val = [true_val] * len(condition)
                 if not isinstance(false_val, list):
                     false_val = [false_val] * len(condition)
                     
-                return [t if c else f for c, t, f in zip(condition, true_val, false_val)]
+                result = [t if c else f for c, t, f in zip(condition, true_val, false_val)]
+                print(f"{indent}[DEBUG] CONDITIONAL => shape={len(result)}")
+                return result
             else:
-                return true_expr.evaluate(variables) if condition else false_expr.evaluate(variables)
+                result = true_expr.evaluate(variables, depth+1) if condition else false_expr.evaluate(variables, depth+1)
+                print(f"{indent}[DEBUG] CONDITIONAL => scalar={result}")
+                return result
         elif self.type == 'BINARY_OP':
-            left = self.children[0].evaluate(variables)
-            right = self.children[1].evaluate(variables)
+            left = self.children[0].evaluate(variables, depth+1)
+            right = self.children[1].evaluate(variables, depth+1)
             
-            # Handle time series data
             if isinstance(left, list) or isinstance(right, list):
                 if not isinstance(left, list):
-                    left = [left] * len(right)
+                    left = [left] * (len(right) if isinstance(right, list) else 1)
                 if not isinstance(right, list):
-                    right = [right] * len(left)
-                    
+                    right = [right] * (len(left) if isinstance(left, list) else 1)
+                
                 if len(left) != len(right):
-                    raise ValueError("Lists must have the same length for binary operations")
-                    
+                    left, right = self.align_length(left, right)
+
                 if self.value == TokenType.PLUS:
-                    return [l + r for l, r in zip(left, right)]
+                    result = [l + r for l, r in zip(left, right)]
                 elif self.value == TokenType.MINUS:
-                    return [l - r for l, r in zip(left, right)]
+                    result = [l - r for l, r in zip(left, right)]
                 elif self.value == TokenType.MULTIPLY:
-                    return [l * r for l, r in zip(left, right)]
+                    result = [l * r for l, r in zip(left, right)]
                 elif self.value == TokenType.DIVIDE:
-                    if any(r == 0 for r in right):
-                        raise ValueError("Division by zero")
-                    return [l / r for l, r in zip(left, right)]
+                    result = [l / r if r != 0 else float('nan') for l, r in zip(left, right)]
                 elif self.value == TokenType.POWER:
-                    return [l ** r for l, r in zip(left, right)]
+                    result = [l ** r for l, r in zip(left, right)]
                 elif self.value == TokenType.EQUAL:
-                    return [l == r for l, r in zip(left, right)]
+                    result = [l == r for l, r in zip(left, right)]
                 elif self.value == TokenType.NOT_EQUAL:
-                    return [l != r for l, r in zip(left, right)]
+                    result = [l != r for l, r in zip(left, right)]
                 elif self.value == TokenType.GREATER:
-                    return [l > r for l, r in zip(left, right)]
+                    result = [l > r for l, r in zip(left, right)]
                 elif self.value == TokenType.LESS:
-                    return [l < r for l, r in zip(left, right)]
+                    result = [l < r for l, r in zip(left, right)]
                 elif self.value == TokenType.GREATER_EQUAL:
-                    return [l >= r for l, r in zip(left, right)]
+                    result = [l >= r for l, r in zip(left, right)]
                 elif self.value == TokenType.LESS_EQUAL:
-                    return [l <= r for l, r in zip(left, right)]
+                    result = [l <= r for l, r in zip(left, right)]
                 elif self.value == TokenType.AND:
-                    return [l and r for l, r in zip(left, right)]
+                    result = [l and r for l, r in zip(left, right)]
                 elif self.value == TokenType.OR:
-                    return [l or r for l, r in zip(left, right)]
-            # Handle single values
+                    result = [l or r for l, r in zip(left, right)]
+                print(f"{indent}[DEBUG] BINARY_OP {self.value} => shape={len(result)}")
+                return result
             else:
                 if self.value == TokenType.PLUS:
-                    return left + right
+                    result = left + right
                 elif self.value == TokenType.MINUS:
-                    return left - right
+                    result = left - right
                 elif self.value == TokenType.MULTIPLY:
-                    return left * right
+                    result = left * right
                 elif self.value == TokenType.DIVIDE:
-                    if right == 0:
-                        raise ValueError("Division by zero")
-                    return left / right
+                    result = left / right if right != 0 else float('nan')
                 elif self.value == TokenType.POWER:
-                    return left ** right
+                    result = left ** right
+                elif self.value == TokenType.EQUAL:
+                    result = left == right
+                elif self.value == TokenType.NOT_EQUAL:
+                    result = left != right
+                elif self.value == TokenType.GREATER:
+                    result = left > right
+                elif self.value == TokenType.LESS:
+                    result = left < right
+                elif self.value == TokenType.GREATER_EQUAL:
+                    result = left >= right
+                elif self.value == TokenType.LESS_EQUAL:
+                    result = left <= right
+                elif self.value == TokenType.AND:
+                    result = left and right
+                elif self.value == TokenType.OR:
+                    result = left or right
+                print(f"{indent}[DEBUG] BINARY_OP {self.value} => scalar={result}")
+                return result
         elif self.type == 'UNARY_OP':
-            child = self.children[0].evaluate(variables)
+            child = self.children[0].evaluate(variables, depth+1)
             if isinstance(child, list):
                 if self.value == TokenType.PLUS:
-                    return child
+                    result = child
                 elif self.value == TokenType.MINUS:
-                    return [-x for x in child]
+                    result = [-x for x in child]
                 elif self.value == TokenType.NOT:
-                    return [not x for x in child]
+                    result = [not x for x in child]
+                print(f"{indent}[DEBUG] UNARY_OP {self.value} => shape={len(result)}")
+                return result
             else:
                 if self.value == TokenType.PLUS:
-                    return +child
+                    result = +child
                 elif self.value == TokenType.MINUS:
-                    return -child
+                    result = -child
                 elif self.value == TokenType.NOT:
-                    return not child
+                    result = not child
+                print(f"{indent}[DEBUG] UNARY_OP {self.value} => scalar={result}")
+                return result
         elif self.type == 'FUNCTION_CALL':
             func_name = self.value.lower()
-            args = [child.evaluate(variables) for child in self.children]
+            args = [child.evaluate(variables, depth+1) for child in self.children]
             
             # Convert all arguments to lists
             args = [[arg] if not isinstance(arg, list) else arg for arg in args]
+            
+            # Log function arguments
+            for i, arg in enumerate(args):
+                print(f"{indent}[DEBUG] FUNCTION {func_name} arg[{i}] => shape={len(arg)}")
             
             if func_name == 'rank':
                 x = args[0]
@@ -160,8 +205,8 @@ class ASTNode:
                 x, n = args
                 n = int(n[0])
                 if len(x) <= n:
-                    return [None] * len(x)
-                return [None] * n + x[:-n]
+                    return [0] * len(x)
+                return [0] * n + x[:-n]
             elif func_name == 'correlation':
                 x, y, n = args
                 n = int(n[0])
@@ -220,21 +265,50 @@ class ASTNode:
                 return [x[i] - x[i-n] for i in range(n, len(x))]
             elif func_name == 'log':
                 x = args[0]
-                if any(val <= 0 for val in x):
-                    raise ValueError("Cannot take log of non-positive values")
-                return [math.log(val) for val in x]
+                if isinstance(x, list):
+                    # 리스트의 경우 각 원소별로 log 적용
+                    result = [math.log(xx) if xx > 0 else float('nan') for xx in x]
+                    print(f"{indent}[DEBUG] FUNCTION log => shape={len(result)}")
+                    return result
+                else:
+                    # 스칼라의 경우 단순 log 적용
+                    result = math.log(x) if x > 0 else float('nan')
+                    print(f"{indent}[DEBUG] FUNCTION log => scalar={result}")
+                    return result
             elif func_name == 'signedpower':
                 x, power = args
                 power = float(power[0])
-                return [abs(xi) ** power * (1 if xi >= 0 else -1) for xi in x]
+                result = []
+                for xi in x:
+                    if xi == 0:
+                        result.append(0)  # 0의 음수 거듭제곱은 0으로 처리
+                    else:
+                        result.append(abs(xi) ** power * (1 if xi >= 0 else -1))
+                return result
             elif func_name == 'decay_linear':
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    raise ValueError(f"List length must be at least {n} for decay_linear")
+                    # 데이터가 부족한 경우 NaN으로 채운 리스트 반환
+                    return [float('nan')] * len(x)
                 weights = [i+1 for i in range(n)]
                 total_weight = sum(weights)
-                return sum(x[-n+i] * weights[i] for i in range(n)) / total_weight
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                        window_weights = weights[-len(window_data):]
+                        window_total_weight = sum(window_weights)
+                        if window_total_weight == 0:
+                            result.append(float('nan'))
+                        else:
+                            result.append(sum(x * w for x, w in zip(window_data, window_weights)) / window_total_weight)
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        result.append(sum(x * w for x, w in zip(window_data, weights)) / total_weight)
+                return result
             elif func_name == 'stddev':
                 x, n = args
                 n = int(n[0])
@@ -257,8 +331,9 @@ class ASTNode:
                 return result
             elif func_name == 'indneutralize':
                 x, g = args
-                if len(x) != len(g):
-                    raise ValueError("Lists must have the same length for indneutralize")
+                # x와 g의 길이를 맞춤
+                x, g = self.align_length(x, g)
+                
                 if not x or not g:
                     raise ValueError("Empty lists are not allowed for indneutralize")
                     
@@ -269,17 +344,24 @@ class ASTNode:
                     if group not in group_means:
                         group_means[group] = 0
                         group_counts[group] = 0
-                    group_means[group] += x[i]
-                    group_counts[group] += 1
+                    if not np.isnan(x[i]):  # NaN 값은 무시
+                        group_means[group] += x[i]
+                        group_counts[group] += 1
                 
                 # Calculate final means
                 for group in group_means:
-                    group_means[group] /= group_counts[group]
+                    if group_counts[group] > 0:  # 0으로 나누기 방지
+                        group_means[group] /= group_counts[group]
+                    else:
+                        group_means[group] = 0
                 
                 # Neutralize
                 result = []
                 for i, group in enumerate(g):
-                    result.append(x[i] - group_means[group])
+                    if np.isnan(x[i]):
+                        result.append(np.nan)
+                    else:
+                        result.append(x[i] - group_means[group])
                     
                 return result
             elif func_name == 'ts_min':
@@ -328,32 +410,200 @@ class ASTNode:
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    return 0
-                x = x[-n:]
-                # Store values with their indices
-                indexed_values = [(val, i) for i, val in enumerate(x)]
-                # Sort by value (ascending)
-                sorted_values = sorted(indexed_values, key=lambda x: x[0])
+                    return [0] * len(x)  # 데이터가 부족한 경우 0으로 채움
                 
-                # Calculate ranks (normalized between 0 and 1)
-                ranks = [0] * len(x)
-                for i, (val, idx) in enumerate(sorted_values):
-                    ranks[idx] = i / (len(x) - 1) if len(x) > 1 else 0
-                
-                return ranks[-1]
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        
+                    # Store values with their indices
+                    indexed_values = [(val, j) for j, val in enumerate(window_data)]
+                    # Sort by value (ascending)
+                    sorted_values = sorted(indexed_values, key=lambda x: x[0])
+                    
+                    # Calculate ranks (normalized between 0 and 1)
+                    ranks = [0] * len(window_data)
+                    for j, (val, idx) in enumerate(sorted_values):
+                        ranks[idx] = j / (len(window_data) - 1) if len(window_data) > 1 else 0
+                    
+                    result.append(ranks[-1])  # 현재 시점의 순위를 추가
+                    
+                return result
             elif func_name == 'sum':
                 x = args[0]
                 if len(args) == 1:
-                    # 단일 리스트의 합
-                    return sum(x)
+                    # 시계열 합산 (axis=0 방향)
+                    if isinstance(x, list):
+                        return x  # 원본 시계열 반환
+                    return [x]  # 스칼라인 경우 리스트로 변환
                 elif len(args) == 2:
-                    # 특정 기간 동안의 합
+                    # 특정 기간 동안의 합을 리스트로 반환
                     n = int(args[1][0])
                     if len(x) < n:
-                        return sum(x)
-                    return sum(x[-n:])
+                        return [0] * len(x)
+                    result = []
+                    for i in range(len(x)):
+                        if i < n - 1:
+                            # 데이터가 부족한 초기 구간
+                            window_data = x[:i+1]
+                        else:
+                            # 충분한 데이터가 있는 구간
+                            window_data = x[i-n+1:i+1]
+                        result.append(sum(window_data))
+                    return result
                 else:
                     raise ValueError("sum function takes 1 or 2 arguments")
+            elif func_name == 'abs':
+                x = args[0]
+                if isinstance(x, list):
+                    # 리스트의 경우 각 원소별로 abs 적용
+                    result = [abs(xx) for xx in x]
+                    print(f"{indent}[DEBUG] FUNCTION abs => shape={len(result)}")
+                    return result
+                else:
+                    # 스칼라의 경우 단순 abs 적용
+                    result = abs(x)
+                    print(f"{indent}[DEBUG] FUNCTION abs => scalar={result}")
+                    return result
+            elif func_name == 'sign':
+                x = args[0]
+                if isinstance(x, list):
+                    return [1 if val > 0 else (-1 if val < 0 else 0) for val in x]
+                return 1 if x > 0 else (-1 if x < 0 else 0)
+            elif func_name == 'min':
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 최소값 계산
+                    x = args[0]
+                    if not isinstance(x, list):
+                        return x
+                    if len(x) == 0:
+                        return None
+                    # None 값이 있으면 None 반환
+                    if any(v is None for v in x):
+                        return None
+                    return min(x)
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 최소값 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 최소값 계산을 위한 헬퍼 함수
+                    def safe_min(a, b):
+                        if a is None or b is None:
+                            return None
+                        return min(a, b)
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_min(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_min(left, right)
+                else:
+                    raise ValueError("min function expects 1 or 2 arguments")
+            elif func_name == 'product':
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 곱 계산
+                    x = args[0]
+                    if not isinstance(x, list):
+                        return x
+                    if len(x) == 0:
+                        return 0
+                    # None 값이 있으면 None 반환
+                    if any(v is None for v in x):
+                        return None
+                    result = 1.0
+                    for val in x:
+                        result *= val
+                    return result
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 곱 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 곱셈을 위한 헬퍼 함수
+                    def safe_mul(a, b):
+                        if a is None or b is None:
+                            return None
+                        return a * b
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_mul(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_mul(left, right)
+                else:
+                    raise ValueError("product function expects 1 or 2 arguments")
+            elif func_name == 'max':
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 최대값 계산
+                    x = args[0]
+                    if not isinstance(x, list):
+                        return x
+                    if len(x) == 0:
+                        return None
+                    # None 값이 있으면 None 반환
+                    if any(v is None for v in x):
+                        return None
+                    return max(x)
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 최대값 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 최대값 계산을 위한 헬퍼 함수
+                    def safe_max(a, b):
+                        if a is None or b is None:
+                            return None
+                        return max(a, b)
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_max(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_max(left, right)
+                else:
+                    raise ValueError("max function expects 1 or 2 arguments")
             else:
                 raise ValueError(f"Unknown function: {func_name}")
         else:
@@ -369,7 +619,7 @@ class ASTNode:
             data = [data]
         if not isinstance(window, (int, float)):
             raise ValueError("Window must be a number")
-        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        window = int(window)
         if window <= 0:
             raise ValueError("Window must be positive")
         result = []
@@ -377,6 +627,24 @@ class ASTNode:
             start = max(0, i - window + 1)
             result.append(min(data[start:i + 1]))
         return result
+
+    def align_length(self, a: list, b: list) -> tuple:
+        """
+        두 리스트 a, b의 길이가 다르면,
+        더 긴 쪽의 앞부분(가장 오래된 구간)을 잘라서 길이를 min_len으로 맞춰줌.
+        """
+        len_a = len(a)
+        len_b = len(b)
+        min_len = min(len_a, len_b)
+        
+        # a의 길이가 더 길면 앞부분(len_a - min_len)을 버림
+        if len_a > min_len:
+            a = a[-min_len:]
+        # b의 길이가 더 길면 앞부분(len_b - min_len)을 버림
+        if len_b > min_len:
+            b = b[-min_len:]
+        
+        return a, b
 
 class Parser:
     def __init__(self, lexer: AlphaLexer):
@@ -401,6 +669,9 @@ class Parser:
         elif token.type == TokenType.IDENTIFIER:
             name = token.value
             self.eat(TokenType.IDENTIFIER)
+            # IndClass.xxx 패턴 처리
+            if name.startswith('IndClass.'):
+                return ASTNode('INDCLASS', name)
             if self.current_token.type == TokenType.LPAREN:
                 return self.function_call(name)
             return ASTNode('VARIABLE', name)
@@ -571,7 +842,7 @@ class AlphaParser:
             # Check list lengths
             if isinstance(left, list) and isinstance(right, list):
                 if len(left) != len(right):
-                    raise ValueError("Lists must have the same length for binary operations")
+                    left, right = self.align_length(left, right)
             
             if node.value == TokenType.PLUS:
                 return [l + r for l, r in zip(left, right)] if isinstance(left, list) else left + right
@@ -630,8 +901,8 @@ class AlphaParser:
                 x, n = args
                 n = int(n[0])
                 if len(x) <= n:
-                    return [None] * len(x)
-                return [None] * n + x[:-n]
+                    return [0] * len(x)
+                return [0] * n + x[:-n]
             
             elif func_name == 'correlation':
                 x, y, n = args
@@ -690,21 +961,50 @@ class AlphaParser:
                 return [x[i] - x[i-n] for i in range(n, len(x))]
             elif func_name == 'log':
                 x = args[0]
-                if any(val <= 0 for val in x):
-                    raise ValueError("Cannot take log of non-positive values")
-                return [math.log(val) for val in x]
+                if isinstance(x, list):
+                    # 리스트의 경우 각 원소별로 log 적용
+                    result = [math.log(xx) if xx > 0 else float('nan') for xx in x]
+                    print(f"{indent}[DEBUG] FUNCTION log => shape={len(result)}")
+                    return result
+                else:
+                    # 스칼라의 경우 단순 log 적용
+                    result = math.log(x) if x > 0 else float('nan')
+                    print(f"{indent}[DEBUG] FUNCTION log => scalar={result}")
+                    return result
             elif func_name == 'signedpower':
                 x, power = args
                 power = float(power[0])
-                return [abs(xi) ** power * (1 if xi >= 0 else -1) for xi in x]
+                result = []
+                for xi in x:
+                    if xi == 0:
+                        result.append(0)  # 0의 음수 거듭제곱은 0으로 처리
+                    else:
+                        result.append(abs(xi) ** power * (1 if xi >= 0 else -1))
+                return result
             elif func_name == 'decay_linear':
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    raise ValueError(f"List length must be at least {n} for decay_linear")
+                    # 데이터가 부족한 경우 NaN으로 채운 리스트 반환
+                    return [float('nan')] * len(x)
                 weights = [i+1 for i in range(n)]
                 total_weight = sum(weights)
-                return sum(x[-n+i] * weights[i] for i in range(n)) / total_weight
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                        window_weights = weights[-len(window_data):]
+                        window_total_weight = sum(window_weights)
+                        if window_total_weight == 0:
+                            result.append(float('nan'))
+                        else:
+                            result.append(sum(x * w for x, w in zip(window_data, window_weights)) / window_total_weight)
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        result.append(sum(x * w for x, w in zip(window_data, weights)) / total_weight)
+                return result
             elif func_name == 'stddev':
                 x, n = args
                 n = int(n[0])
@@ -727,8 +1027,9 @@ class AlphaParser:
                 return result
             elif func_name == 'indneutralize':
                 x, g = args
-                if len(x) != len(g):
-                    raise ValueError("Lists must have the same length for indneutralize")
+                # x와 g의 길이를 맞춤
+                x, g = self.align_length(x, g)
+                
                 if not x or not g:
                     raise ValueError("Empty lists are not allowed for indneutralize")
                     
@@ -739,34 +1040,38 @@ class AlphaParser:
                     if group not in group_means:
                         group_means[group] = 0
                         group_counts[group] = 0
-                    group_means[group] += x[i]
-                    group_counts[group] += 1
+                    if not np.isnan(x[i]):  # NaN 값은 무시
+                        group_means[group] += x[i]
+                        group_counts[group] += 1
                 
                 # Calculate final means
                 for group in group_means:
-                    group_means[group] /= group_counts[group]
+                    if group_counts[group] > 0:  # 0으로 나누기 방지
+                        group_means[group] /= group_counts[group]
+                    else:
+                        group_means[group] = 0
                 
                 # Neutralize
                 result = []
                 for i, group in enumerate(g):
-                    result.append(x[i] - group_means[group])
+                    if np.isnan(x[i]):
+                        result.append(np.nan)
+                    else:
+                        result.append(x[i] - group_means[group])
                     
                 return result
-            
-            elif func_name == 'rank':
-                x = args[0]
-                # Store values with their indices
-                indexed_values = [(val, i) for i, val in enumerate(x)]
-                # Sort by value (ascending)
-                sorted_values = sorted(indexed_values, key=lambda x: x[0])
-                
-                # Calculate ranks (normalized between 0 and 1)
-                ranks = [0] * len(x)
-                for i, (val, idx) in enumerate(sorted_values):
-                    ranks[idx] = i / (len(x) - 1) if len(x) > 1 else 0
-                
-                return ranks
-            
+            elif func_name == 'ts_max':
+                x, n = args
+                n = int(n[0])
+                if len(x) < n:
+                    raise ValueError(f"List length must be at least {n} for ts_max")
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        result.append(max(x[:i+1]))
+                    else:
+                        result.append(max(x[i-n+1:i+1]))
+                return [int(val) if val.is_integer() else val for val in result]
             elif func_name == 'ts_argmax':
                 x, n = args
                 n = int(n[0])
@@ -786,46 +1091,210 @@ class AlphaParser:
                     result.append(max_idx)
                     
                 return result
-            
             elif func_name == 'ts_argmin':
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
                     return x.index(min(x))
                 return x[-n:].index(min(x[-n:]))
-            
             elif func_name == 'ts_rank':
                 x, n = args
                 n = int(n[0])
                 if len(x) < n:
-                    return 0
-                x = x[-n:]
-                # Store values with their indices
-                indexed_values = [(val, i) for i, val in enumerate(x)]
-                # Sort by value (ascending)
-                sorted_values = sorted(indexed_values, key=lambda x: x[0])
+                    return [0] * len(x)  # 데이터가 부족한 경우 0으로 채움
                 
-                # Calculate ranks (normalized between 0 and 1)
-                ranks = [0] * len(x)
-                for i, (val, idx) in enumerate(sorted_values):
-                    ranks[idx] = i / (len(x) - 1) if len(x) > 1 else 0
-                
-                return ranks[-1]
-            
+                result = []
+                for i in range(len(x)):
+                    if i < n - 1:
+                        # 데이터가 부족한 초기 구간
+                        window_data = x[:i+1]
+                    else:
+                        # 충분한 데이터가 있는 구간
+                        window_data = x[i-n+1:i+1]
+                        
+                    # Store values with their indices
+                    indexed_values = [(val, j) for j, val in enumerate(window_data)]
+                    # Sort by value (ascending)
+                    sorted_values = sorted(indexed_values, key=lambda x: x[0])
+                    
+                    # Calculate ranks (normalized between 0 and 1)
+                    ranks = [0] * len(window_data)
+                    for j, (val, idx) in enumerate(sorted_values):
+                        ranks[idx] = j / (len(window_data) - 1) if len(window_data) > 1 else 0
+                    
+                    result.append(ranks[-1])  # 현재 시점의 순위를 추가
+                    
+                return result
             elif func_name == 'sum':
                 x = args[0]
                 if len(args) == 1:
-                    # 단일 리스트의 합
-                    return sum(x)
+                    # 시계열 합산 (axis=0 방향)
+                    if isinstance(x, list):
+                        return x  # 원본 시계열 반환
+                    return [x]  # 스칼라인 경우 리스트로 변환
                 elif len(args) == 2:
-                    # 특정 기간 동안의 합
+                    # 특정 기간 동안의 합을 리스트로 반환
                     n = int(args[1][0])
                     if len(x) < n:
-                        return sum(x)
-                    return sum(x[-n:])
+                        return [0] * len(x)
+                    result = []
+                    for i in range(len(x)):
+                        if i < n - 1:
+                            # 데이터가 부족한 초기 구간
+                            window_data = x[:i+1]
+                        else:
+                            # 충분한 데이터가 있는 구간
+                            window_data = x[i-n+1:i+1]
+                        result.append(sum(window_data))
+                    return result
                 else:
                     raise ValueError("sum function takes 1 or 2 arguments")
-            
+            elif func_name == 'abs':
+                x = args[0]
+                if isinstance(x, list):
+                    # 리스트의 경우 각 원소별로 abs 적용
+                    result = [abs(xx) for xx in x]
+                    print(f"{indent}[DEBUG] FUNCTION abs => shape={len(result)}")
+                    return result
+                else:
+                    # 스칼라의 경우 단순 abs 적용
+                    result = abs(x)
+                    print(f"{indent}[DEBUG] FUNCTION abs => scalar={result}")
+                    return result
+            elif func_name == 'sign':
+                x = args[0]
+                if isinstance(x, list):
+                    return [1 if val > 0 else (-1 if val < 0 else 0) for val in x]
+                return 1 if x > 0 else (-1 if x < 0 else 0)
+            elif func_name == 'min':
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 최소값 계산
+                    x = args[0]
+                    if not isinstance(x, list):
+                        return x
+                    if len(x) == 0:
+                        return None
+                    # None 값이 있으면 None 반환
+                    if any(v is None for v in x):
+                        return None
+                    return min(x)
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 최소값 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 최소값 계산을 위한 헬퍼 함수
+                    def safe_min(a, b):
+                        if a is None or b is None:
+                            return None
+                        return min(a, b)
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_min(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_min(left, right)
+                else:
+                    raise ValueError("min function expects 1 or 2 arguments")
+            elif func_name == 'product':
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 곱 계산
+                    x = args[0]
+                    if not isinstance(x, list):
+                        return x
+                    if len(x) == 0:
+                        return 0
+                    # None 값이 있으면 None 반환
+                    if any(v is None for v in x):
+                        return None
+                    result = 1.0
+                    for val in x:
+                        result *= val
+                    return result
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 곱 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 곱셈을 위한 헬퍼 함수
+                    def safe_mul(a, b):
+                        if a is None or b is None:
+                            return None
+                        return a * b
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_mul(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_mul(left, right)
+                else:
+                    raise ValueError("product function expects 1 or 2 arguments")
+            elif func_name == 'max':
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 최대값 계산
+                    x = args[0]
+                    if not isinstance(x, list):
+                        return x
+                    if len(x) == 0:
+                        return None
+                    # None 값이 있으면 None 반환
+                    if any(v is None for v in x):
+                        return None
+                    return max(x)
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 최대값 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 최대값 계산을 위한 헬퍼 함수
+                    def safe_max(a, b):
+                        if a is None or b is None:
+                            return None
+                        return max(a, b)
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_max(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_max(left, right)
+                else:
+                    raise ValueError("max function expects 1 or 2 arguments")
             else:
                 raise ValueError(f"Unknown function: {func_name}") 
         else:
@@ -856,7 +1325,7 @@ class AlphaParser:
             data = [data]
         if not isinstance(window, (int, float)):
             raise ValueError("Window must be a number")
-        window = int(window) + 1  # 현재 값을 포함하기 위해 window + 1
+        window = int(window)
         if window <= 0:
             raise ValueError("Window must be positive")
         result = []

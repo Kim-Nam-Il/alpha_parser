@@ -82,30 +82,121 @@ class ASTNode:
         elif self.type == 'BINARY_OP':
             left = self.children[0].evaluate(variables)
             right = self.children[1].evaluate(variables)
-            if self.value == TokenType.PLUS:
-                return left + right
-            elif self.value == TokenType.MINUS:
-                return left - right
-            elif self.value == TokenType.MULTIPLY:
-                return left * right
-            elif self.value == TokenType.DIVIDE:
-                return left / right
-            elif self.value == TokenType.LESS_THAN:
-                return left < right
-            elif self.value == TokenType.GREATER_THAN:
-                return left > right
-            elif self.value == TokenType.LESS_EQUAL:
-                return left <= right
-            elif self.value == TokenType.GREATER_EQUAL:
-                return left >= right
-            elif self.value == TokenType.EQUAL:
-                return left == right
-            elif self.value == TokenType.NOT_EQUAL:
-                return left != right
-            elif self.value == TokenType.AND:
-                return left and right
-            elif self.value == TokenType.OR:
-                return left or right
+            
+            # 안전한 연산을 위한 헬퍼 함수들
+            def safe_add(a, b):
+                if a is None or b is None:
+                    return None
+                return a + b
+            
+            def safe_sub(a, b):
+                if a is None or b is None:
+                    return None
+                return a - b
+            
+            def safe_mul(a, b):
+                if a is None or b is None:
+                    return None
+                return a * b
+            
+            def safe_div(a, b):
+                if a is None or b is None or b == 0:
+                    return None
+                return a / b
+            
+            def safe_lt(a, b):
+                if a is None or b is None:
+                    return None
+                return a < b
+            
+            def safe_gt(a, b):
+                if a is None or b is None:
+                    return None
+                return a > b
+            
+            def safe_le(a, b):
+                if a is None or b is None:
+                    return None
+                return a <= b
+            
+            def safe_ge(a, b):
+                if a is None or b is None:
+                    return None
+                return a >= b
+            
+            def safe_eq(a, b):
+                if a is None or b is None:
+                    return None
+                return a == b
+            
+            def safe_ne(a, b):
+                if a is None or b is None:
+                    return None
+                return a != b
+            
+            # 리스트 연산 처리
+            if isinstance(left, list) or isinstance(right, list):
+                # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                if not isinstance(left, list):
+                    left = [left] * len(right)
+                if not isinstance(right, list):
+                    right = [right] * len(left)
+                if len(left) != len(right):
+                    if len(left) > len(right):
+                        left = left[-len(right):]
+                    else:
+                        right = right[-len(left):]
+                
+                if self.value == TokenType.PLUS:
+                    return [safe_add(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.MINUS:
+                    return [safe_sub(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.MULTIPLY:
+                    return [safe_mul(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.DIVIDE:
+                    return [safe_div(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.LESS:
+                    return [safe_lt(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.GREATER:
+                    return [safe_gt(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.LESS_EQUAL:
+                    return [safe_le(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.GREATER_EQUAL:
+                    return [safe_ge(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.EQUAL:
+                    return [safe_eq(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.NOT_EQUAL:
+                    return [safe_ne(l, r) for l, r in zip(left, right)]
+                elif self.value == TokenType.AND:
+                    return [l and r for l, r in zip(left, right)]
+                elif self.value == TokenType.OR:
+                    return [l or r for l, r in zip(left, right)]
+            else:
+                # 스칼라 연산
+                if self.value == TokenType.PLUS:
+                    return safe_add(left, right)
+                elif self.value == TokenType.MINUS:
+                    return safe_sub(left, right)
+                elif self.value == TokenType.MULTIPLY:
+                    return safe_mul(left, right)
+                elif self.value == TokenType.DIVIDE:
+                    return safe_div(left, right)
+                elif self.value == TokenType.LESS:
+                    return safe_lt(left, right)
+                elif self.value == TokenType.GREATER:
+                    return safe_gt(left, right)
+                elif self.value == TokenType.LESS_EQUAL:
+                    return safe_le(left, right)
+                elif self.value == TokenType.GREATER_EQUAL:
+                    return safe_ge(left, right)
+                elif self.value == TokenType.EQUAL:
+                    return safe_eq(left, right)
+                elif self.value == TokenType.NOT_EQUAL:
+                    return safe_ne(left, right)
+                elif self.value == TokenType.AND:
+                    return left and right
+                elif self.value == TokenType.OR:
+                    return left or right
         elif self.type == 'UNARY_OP':
             value = self.children[0].evaluate(variables)
             if self.value == TokenType.MINUS:
@@ -135,7 +226,51 @@ class ASTNode:
             elif func_name == 'sum':
                 return self._sum(args[0], int(args[1]))
             elif func_name == 'product':
-                return self._product(args[0], int(args[1]))
+                print(f"[DEBUG] product function called with args: {args}")
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 곱 계산
+                    x = args[0]
+                    if not isinstance(x, list):
+                        return x
+                    if len(x) == 0:
+                        return 0
+                    # None 값이 있으면 None 반환
+                    if any(v is None for v in x):
+                        return None
+                    result = 1.0
+                    for val in x:
+                        result *= val
+                    return result
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 곱 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 곱셈을 위한 헬퍼 함수
+                    def safe_mul(a, b):
+                        if a is None or b is None:
+                            return None
+                        return a * b
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_mul(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_mul(left, right)
+                else:
+                    raise ValueError("product function expects 1 or 2 arguments")
             elif func_name == 'stddev':
                 return self._stddev(args[0], int(args[1]))
             elif func_name == 'ts_rank':
@@ -148,12 +283,50 @@ class ASTNode:
                 return self._ts_argmax(args[0], int(args[1]))
             elif func_name == 'ts_argmin':
                 return self._ts_argmin(args[0], int(args[1]))
+            elif func_name == 'min':
+                if len(args) == 1:
+                    # 단일 리스트의 경우 전체 최소값 반환
+                    if isinstance(args[0], list):
+                        return min(args[0])
+                    return args[0]
+                elif len(args) == 2:
+                    # 두 인자의 경우 원소별 최소값 계산
+                    left = args[0]
+                    right = args[1]
+                    
+                    # 안전한 min 연산을 위한 헬퍼 함수
+                    def safe_min(a, b):
+                        if a is None or b is None:
+                            return None
+                        return min(a, b)
+                    
+                    # 리스트 연산 처리
+                    if isinstance(left, list) or isinstance(right, list):
+                        # 하나라도 리스트면, 둘 다 리스트화 & 길이 맞추기
+                        if not isinstance(left, list):
+                            left = [left] * len(right)
+                        if not isinstance(right, list):
+                            right = [right] * len(left)
+                        if len(left) != len(right):
+                            if len(left) > len(right):
+                                left = left[-len(right):]
+                            else:
+                                right = right[-len(left):]
+                        
+                        return [safe_min(l, r) for l, r in zip(left, right)]
+                    else:
+                        # 스칼라 연산
+                        return safe_min(left, right)
+                else:
+                    raise ValueError("min function expects 1 or 2 arguments")
             elif func_name == 'abs':
                 return np.abs(args[0])
             else:
                 raise ValueError(f"Unknown function: {func_name}")
         elif self.type == 'CONDITIONAL':
             condition = self.children[0].evaluate(variables)
+            if condition is None:
+                return None
             if condition:
                 return self.children[1].evaluate(variables)
             else:

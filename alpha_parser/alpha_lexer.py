@@ -1,3 +1,4 @@
+# alpha_parser/alpha_lexer.py
 from typing import List, Optional
 import re
 from alpha_parser.tokens import Token, TokenType, KNOWN_FUNCTIONS, KNOWN_VARIABLES
@@ -39,10 +40,19 @@ class AlphaLexer:
         while self.current_char is not None:
             if self.current_char.isspace():
                 self._advance()
+            elif self.current_char.isalpha():
+                # IndClass 패턴 체크
+                match = re.match(r'IndClass\.(sector|industry|subindustry)', self.text[self.pos:])
+                if match:
+                    value = match.group(0)
+                    tokens.append(Token(TokenType.IDENTIFIER, value))
+                    self.pos += len(value)
+                    self.current_char = self.text[self.pos] if self.pos < len(self.text) else None
+                    continue
+                else:
+                    tokens.append(self._identifier())
             elif self.current_char.isdigit() or (self.current_char == '.' and self._peek_char() is not None and self._peek_char().isdigit()):
                 tokens.append(self._number())
-            elif self.current_char.isalpha():
-                tokens.append(self._identifier())
             elif self.current_char == '+':
                 tokens.append(Token(TokenType.PLUS, '+'))
                 self._advance()
@@ -112,6 +122,20 @@ class AlphaLexer:
                 else:
                     tokens.append(Token(TokenType.NOT, '!'))
                 self._advance()
+            elif self.current_char == '&':
+                if self._peek_char() == '&':
+                    self._advance()
+                    tokens.append(Token(TokenType.AND, '&&'))
+                    self._advance()
+                else:
+                    raise ValueError(f"Invalid character: {self.current_char} (did you mean && ?)")
+            elif self.current_char == '|':
+                if self._peek_char() == '|':
+                    self._advance()
+                    tokens.append(Token(TokenType.OR, '||'))
+                    self._advance()
+                else:
+                    raise ValueError(f"Invalid character: {self.current_char} (did you mean || ?)")
             elif self.current_char == '?':
                 tokens.append(Token(TokenType.QUESTION, '?'))
                 self._advance()
