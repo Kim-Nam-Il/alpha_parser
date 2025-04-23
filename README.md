@@ -243,4 +243,67 @@ Results:
 97 2023-04-08     4.838512         1  114.538724  0.365692       -1.179949
 98 2023-04-09     0.055431         1   99.854602 -0.128202       -1.308151
 99 2023-04-10    -1.145650        -1  113.378163  0.135433       -1.172718
+
+# CryptoBacktest
+
+A cryptocurrency backtesting framework
+
+## Features
+
+- Alpha formula parsing and evaluation
+- Backtesting engine
+- Performance analysis and visualization
+
+## Installation
+
+```bash
+pip install -r requirements.txt
 ```
+
+## Usage Examples
+
+### Alpha Backtesting
+
+You can backtest alpha formulas using `examples/alpha_backtest.py`:
+
+```python
+from alpha_parser.alpha_lexer import AlphaLexer
+from alpha_parser.alpha_parser import Parser
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Create backtester instance
+backtester = AlphaBacktester(lookback_window=20)
+
+# Generate sample data
+data = backtester.generate_sample_data(size=100)
+
+# Test alpha formula
+alpha_formula = "((close - open) / ((high - low) + .001))"
+backtester.test_alpha(alpha_formula, data)
+```
+
+### Supported Alpha Formulas
+
+Currently supported alpha formula examples:
+
+1. Alpha#1: `(rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20): close), 2.), 5)) - 0.5)`
+2. Alpha#101: `((close - open) / ((high - low) + .001))`
+
+### Backtesting Results
+
+Backtesting results include the following metrics:
+- Total Return
+- Sharpe Ratio
+- Maximum Drawdown
+
+Also provides the following visualizations:
+- Cumulative PnL graph
+- Alpha value graph
+- Position graph
+- Daily PnL distribution
+
+## License
+
+MIT License
