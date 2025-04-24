@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Alpha Backtest</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+        }
+        .left-panel {
+            width: 40%;
+            padding: 20px;
+            border-right: 1px solid #ccc;
+        }
+        .right-panel {
+            width: 60%;
+            padding: 20px;
+        }
+        .formula-select {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .formula-text {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #chart-container {
+            width: 100%;
+            height: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div class="left-panel">
+        <h2>Alpha Formula</h2>
+        <select id="formula-select" class="formula-select">
+            {% for name, formula in formulas.items() %}
+            <option value="{{ formula }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+        <textarea id="formula-text" class="formula-text"></textarea>
+        <button onclick="simulate()">Simulate</button>
+    </div>
+    <div class="right-panel">
+        <h2>Backtest Results</h2>
+        <div id="chart-container">
+            <canvas id="pnl-chart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // 초기 수식 설정
+        document.getElementById('formula-text').value = document.getElementById('formula-select').value;
+        
+        // 수식 선택 변경 시 텍스트 업데이트
+        document.getElementById('formula-select').addEventListener('change', function() {
+            document.getElementById('formula-text').value = this.value;
+        });
+
+        // 차트 초기화
+        const ctx = document.getElementById('pnl-chart').getContext('2d');
+        let pnlChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Cumulative PnL',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        // 시뮬레이션 실행
+        function simulate() {
+            const formula = document.getElementById('formula-text').value;
+            
+            fetch('/simulate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ formula: formula })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 차트 업데이트
+                pnlChart.data.labels = data.dates;
+                pnlChart.data.datasets[0].data = data.pnl;
+                pnlChart.update();
+            })
+            .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html> 
