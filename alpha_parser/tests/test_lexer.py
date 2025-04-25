@@ -1,6 +1,6 @@
 import unittest
 from alpha_parser.lexer import Lexer
-from alpha_parser.tokens import TokenType
+from alpha_parser.alpha_tokens import TokenType
 
 class TestLexer(unittest.TestCase):
     def setUp(self):

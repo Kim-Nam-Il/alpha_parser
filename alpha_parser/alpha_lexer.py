@@ -1,7 +1,7 @@
 # alpha_parser/alpha_lexer.py
 from typing import List, Optional
 import re
-from alpha_parser.tokens import Token, TokenType, KNOWN_FUNCTIONS, KNOWN_VARIABLES
+from alpha_parser.alpha_tokens import Token, TokenType, KNOWN_FUNCTIONS, KNOWN_VARIABLES
 
 class AlphaLexer:
     def __init__(self, text: str):

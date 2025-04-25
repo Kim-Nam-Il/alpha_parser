@@ -1,6 +1,6 @@
 # alpha_parser/alpha_parser.py
 from typing import List, Optional, Union, Dict, Any
-from alpha_parser.tokens import Token, TokenType
+from alpha_parser.alpha_tokens import Token, TokenType
 from alpha_parser.alpha_lexer import AlphaLexer
 import math
 import pandas as pd
