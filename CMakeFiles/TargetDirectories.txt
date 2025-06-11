@@ -1,0 +1,3 @@
+/Users/laptop/Library/CloudStorage/GoogleDrive-namil415@gmail.com/내 드라이브/github_gdrive/alpha_parser/CMakeFiles/alpha_parser.dir
+/Users/laptop/Library/CloudStorage/GoogleDrive-namil415@gmail.com/내 드라이브/github_gdrive/alpha_parser/CMakeFiles/edit_cache.dir
+/Users/laptop/Library/CloudStorage/GoogleDrive-namil415@gmail.com/내 드라이브/github_gdrive/alpha_parser/CMakeFiles/rebuild_cache.dir

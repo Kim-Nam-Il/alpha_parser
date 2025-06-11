@@ -1,0 +1,2 @@
+/usr/bin/ar qc libalpha_parser.a CMakeFiles/alpha_parser.dir/src/alpha_functions.cpp.o CMakeFiles/alpha_parser.dir/src/alpha_lexer.cpp.o CMakeFiles/alpha_parser.dir/src/alpha_parser.cpp.o CMakeFiles/alpha_parser.dir/src/c_interface.cpp.o
+/usr/bin/ranlib libalpha_parser.a
