@@ -307,3 +307,29 @@ Also provides the following visualizations:
 ## License
 
 MIT License
+
+## C++ Core Engine
+
+The alpha_parser project includes a C++ core engine for high-performance parsing and evaluation of financial alpha formulas. This C++ component is optimized for speed and can be built as a shared library (e.g., libalpha_parser.so on Linux or libalpha_parser.dylib on macOS), which integrates seamlessly with Python.
+
+### C++ Usage Example
+```bash
+# Build the C++ library
+cd alpha_parser
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make
+
+# Integrate with Python (example using ctypes)
+import ctypes
+from ctypes import CDLL
+
+# Load the shared library
+lib = CDLL('./libalpha_parser.dylib')  # Use .so on Linux
+
+# Example: Call a C++ function (assuming a simple evaluation function)
+# result = lib.evaluate_formula(b"(close - open)")
+print('C++ evaluated result:', result)
+```
+
+This example demonstrates building the C++ library and calling it from Python, similar to the Python-based usage above.
